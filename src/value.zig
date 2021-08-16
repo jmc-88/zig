@@ -1218,8 +1218,6 @@ pub const Value = extern union {
         std.hash.autoHash(hasher, zig_ty_tag);
 
         switch (zig_ty_tag) {
-            .BoundFn => unreachable, // TODO remove this from the language
-
             .Void,
             .NoReturn,
             .Undefined,

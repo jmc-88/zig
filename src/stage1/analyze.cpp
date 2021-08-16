@@ -335,7 +335,6 @@ AstNode *type_decl_node(ZigType *type_entry) {
         case ZigTypeIdErrorUnion:
         case ZigTypeIdErrorSet:
         case ZigTypeIdFn:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdVector:
         case ZigTypeIdAnyFrame:
             return nullptr;
@@ -405,7 +404,6 @@ bool type_is_resolved(ZigType *type_entry, ResolveStatus status) {
         case ZigTypeIdErrorUnion:
         case ZigTypeIdErrorSet:
         case ZigTypeIdFn:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdVector:
         case ZigTypeIdAnyFrame:
             return true;
@@ -957,22 +955,6 @@ ZigType *get_opaque_type(CodeGen *g, Scope *scope, AstNode *source_node, const c
     entry->abi_align = 1;
 
     return entry;
-}
-
-ZigType *get_bound_fn_type(CodeGen *g, ZigFn *fn_entry) {
-    ZigType *fn_type = fn_entry->type_entry;
-    assert(fn_type->id == ZigTypeIdFn);
-    if (fn_type->data.fn.bound_fn_parent)
-        return fn_type->data.fn.bound_fn_parent;
-
-    ZigType *bound_fn_type = new_type_table_entry(ZigTypeIdBoundFn);
-    bound_fn_type->data.bound_fn.fn_type = fn_type;
-
-    buf_resize(&bound_fn_type->name, 0);
-    buf_appendf(&bound_fn_type->name, "(bound %s)", buf_ptr(&fn_type->name));
-
-    fn_type->data.fn.bound_fn_parent = bound_fn_type;
-    return bound_fn_type;
 }
 
 const char *calling_convention_name(CallingConvention cc) {
@@ -1746,7 +1728,6 @@ static Error emit_error_unless_type_allowed_in_packed_container(CodeGen *g, ZigT
         case ZigTypeIdNull:
         case ZigTypeIdErrorUnion:
         case ZigTypeIdErrorSet:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOpaque:
         case ZigTypeIdFnFrame:
         case ZigTypeIdAnyFrame:
@@ -1849,7 +1830,6 @@ Error type_allowed_in_extern(CodeGen *g, ZigType *type_entry, ExternPosition pos
         case ZigTypeIdNull:
         case ZigTypeIdErrorUnion:
         case ZigTypeIdErrorSet:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdVoid:
         case ZigTypeIdFnFrame:
         case ZigTypeIdAnyFrame:
@@ -4132,7 +4112,6 @@ ZigType *validate_var_type(CodeGen *g, AstNodeVariableDeclaration *source_node, 
         case ZigTypeIdEnum:
         case ZigTypeIdUnion:
         case ZigTypeIdFn:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdVector:
         case ZigTypeIdFnFrame:
         case ZigTypeIdAnyFrame:
@@ -4643,7 +4622,6 @@ bool is_container(ZigType *type_entry) {
         case ZigTypeIdErrorUnion:
         case ZigTypeIdErrorSet:
         case ZigTypeIdFn:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdVector:
         case ZigTypeIdFnFrame:
         case ZigTypeIdAnyFrame:
@@ -5427,7 +5405,6 @@ bool handle_is_ptr(CodeGen *g, ZigType *type_entry) {
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOpaque:
              zig_unreachable();
         case ZigTypeIdUnreachable:
@@ -5716,10 +5693,6 @@ static uint32_t hash_combine_const_val(uint32_t hash_val, ZigValue *const_val) {
         case ZigTypeIdAnyFrame:
             // TODO better hashing algorithm
             return hash_val;
-        case ZigTypeIdBoundFn: {
-            assert(const_val->data.x_bound_fn.fn != nullptr);
-            return hash_combine(hash_val, &const_val->data.x_bound_fn.fn);
-        }
         case ZigTypeIdInvalid:
         case ZigTypeIdUnreachable:
             zig_unreachable();
@@ -5804,7 +5777,6 @@ static bool can_mutate_comptime_var_state(ZigValue *value) {
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdFn:
         case ZigTypeIdOpaque:
         case ZigTypeIdErrorSet:
@@ -5880,7 +5852,6 @@ static bool return_type_is_cacheable(ZigType *return_type) {
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdFn:
         case ZigTypeIdOpaque:
         case ZigTypeIdErrorSet:
@@ -6045,7 +6016,6 @@ OnePossibleValue type_has_one_possible_value(CodeGen *g, ZigType *type_entry) {
         case ZigTypeIdComptimeInt:
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdMetaType:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOptional:
         case ZigTypeIdFn:
         case ZigTypeIdBool:
@@ -6189,7 +6159,6 @@ ReqCompTime type_requires_comptime(CodeGen *g, ZigType *ty) {
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
         case ZigTypeIdMetaType:
-        case ZigTypeIdBoundFn:
             return ReqCompTimeYes;
         case ZigTypeIdArray:
             return type_requires_comptime(g, ty->data.array.child_type);
@@ -7312,7 +7281,6 @@ bool const_values_equal(CodeGen *g, ZigValue *a, ZigValue *b) {
                 return const_values_equal(g, a->data.x_err_union.payload, b->data.x_err_union.payload);
             }
         }
-        case ZigTypeIdBoundFn:
         case ZigTypeIdInvalid:
         case ZigTypeIdUnreachable:
             zig_unreachable();
@@ -7594,12 +7562,6 @@ void render_const_value(CodeGen *g, Buf *buf, ZigValue *const_val) {
                 }
                 return;
             }
-        case ZigTypeIdBoundFn:
-            {
-                ZigFn *fn_entry = const_val->data.x_bound_fn.fn;
-                buf_appendf(buf, "(bound fn %s)", buf_ptr(&fn_entry->symbol_name));
-                return;
-            }
         case ZigTypeIdStruct:
             {
                 if (is_slice(type_entry)) {
@@ -7721,7 +7683,6 @@ uint32_t type_id_hash(TypeId const *x) {
         case ZigTypeIdEnum:
         case ZigTypeIdUnion:
         case ZigTypeIdFn:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdFnFrame:
         case ZigTypeIdAnyFrame:
             zig_unreachable();
@@ -7787,7 +7748,6 @@ bool type_id_eql(TypeId const *a, TypeId const *b) {
         case ZigTypeIdEnum:
         case ZigTypeIdUnion:
         case ZigTypeIdFn:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOpaque:
         case ZigTypeIdFnFrame:
         case ZigTypeIdAnyFrame:
@@ -8019,7 +7979,6 @@ static const ZigTypeId all_type_ids[] = {
     ZigTypeIdEnum,
     ZigTypeIdUnion,
     ZigTypeIdFn,
-    ZigTypeIdBoundFn,
     ZigTypeIdOpaque,
     ZigTypeIdFnFrame,
     ZigTypeIdAnyFrame,
@@ -8080,18 +8039,16 @@ size_t type_id_index(ZigType *entry) {
             return 17;
         case ZigTypeIdFn:
             return 18;
-        case ZigTypeIdBoundFn:
-            return 19;
         case ZigTypeIdOpaque:
-            return 20;
+            return 19;
         case ZigTypeIdFnFrame:
-            return 21;
+            return 20;
         case ZigTypeIdAnyFrame:
-            return 22;
+            return 21;
         case ZigTypeIdVector:
-            return 23;
+            return 22;
         case ZigTypeIdEnumLiteral:
-            return 24;
+            return 23;
     }
     zig_unreachable();
 }
@@ -8140,8 +8097,6 @@ const char *type_id_name(ZigTypeId id) {
             return "Union";
         case ZigTypeIdFn:
             return "Fn";
-        case ZigTypeIdBoundFn:
-            return "BoundFn";
         case ZigTypeIdOpaque:
             return "Opaque";
         case ZigTypeIdVector:
@@ -9832,7 +9787,6 @@ static void resolve_llvm_types(CodeGen *g, ZigType *type, ResolveStatus wanted_r
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
-        case ZigTypeIdBoundFn:
             zig_unreachable();
         case ZigTypeIdFloat:
         case ZigTypeIdOpaque:
@@ -10124,7 +10078,6 @@ bool type_is_numeric(ZigType *ty) {
         case ZigTypeIdEnum:
         case ZigTypeIdUnion:
         case ZigTypeIdFn:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOpaque:
         case ZigTypeIdFnFrame:
         case ZigTypeIdAnyFrame:
@@ -10306,7 +10259,6 @@ static void dump_value_indent(ZigValue *val, int indent) {
         case ZigTypeIdEnum:
         case ZigTypeIdUnion:
         case ZigTypeIdFn:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOpaque:
         case ZigTypeIdFnFrame:
         case ZigTypeIdAnyFrame:

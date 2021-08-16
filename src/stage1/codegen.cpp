@@ -7367,7 +7367,6 @@ static LLVMValueRef pack_const_int(CodeGen *g, LLVMTypeRef big_int_type_ref, Zig
         case ZigTypeIdNull:
         case ZigTypeIdErrorUnion:
         case ZigTypeIdErrorSet:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdVoid:
         case ZigTypeIdOpaque:
             zig_unreachable();
@@ -8091,7 +8090,6 @@ static LLVMValueRef gen_const_val(CodeGen *g, ZigValue *const_val, const char *n
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOpaque:
             zig_unreachable();
         case ZigTypeIdFnFrame:

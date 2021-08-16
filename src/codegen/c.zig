@@ -703,8 +703,6 @@ pub const DeclGen = struct {
             .ComptimeInt,
             .Type,
             => unreachable, // must be const or comptime
-
-            .BoundFn => unreachable, // this type will be deleted from the language
         }
     }
 

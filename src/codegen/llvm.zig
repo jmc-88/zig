@@ -690,8 +690,7 @@ pub const DeclGen = struct {
             .Null => unreachable,
             .EnumLiteral => unreachable,
 
-            .BoundFn => @panic("TODO remove BoundFn from the language"),
-
+            .Enum,
             .Union,
             .Opaque,
             .Frame,

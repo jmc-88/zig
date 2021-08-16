@@ -310,12 +310,6 @@ struct ConstErrValue {
     ZigValue *payload;
 };
 
-struct ConstBoundFnValue {
-    ZigFn *fn;
-    Stage1AirInst *first_arg;
-    AstNode *first_arg_src;
-};
-
 struct ConstArgTuple {
     size_t start_index;
     size_t end_index;
@@ -510,7 +504,6 @@ struct ZigValue {
         double x_f64;
         float128_t x_f128;
         bool x_bool;
-        ConstBoundFnValue x_bound_fn;
         ZigType *x_type;
         ZigValue *x_optional;
         ConstErrValue x_err_union;
@@ -1489,12 +1482,6 @@ struct ZigTypeFn {
 
     LLVMTypeRef raw_type_ref;
     ZigLLVMDIType *raw_di_type;
-
-    ZigType *bound_fn_parent;
-};
-
-struct ZigTypeBoundFn {
-    ZigType *fn_type;
 };
 
 // Needs to have the same memory layout as ZigTypeArray
@@ -1529,7 +1516,6 @@ enum ZigTypeId {
     ZigTypeIdEnum,
     ZigTypeIdUnion,
     ZigTypeIdFn,
-    ZigTypeIdBoundFn,
     ZigTypeIdOpaque,
     ZigTypeIdFnFrame,
     ZigTypeIdAnyFrame,
@@ -1588,7 +1574,6 @@ struct ZigType {
         ZigTypeEnum enumeration;
         ZigTypeUnion unionation;
         ZigTypeFn fn;
-        ZigTypeBoundFn bound_fn;
         ZigTypeVector vector;
         ZigTypeOpaque opaque;
         ZigTypeFnFrame frame;

@@ -1868,9 +1868,6 @@ fn zirParamType(sema: *Sema, block: *Scope.Block, inst: Zir.Inst.Index) CompileE
 
     const fn_ty: Type = switch (fn_inst_ty.zigTypeTag()) {
         .Fn => fn_inst_ty,
-        .BoundFn => {
-            return sema.mod.fail(&block.base, fn_inst_src, "TODO implement zirParamType for method call syntax", .{});
-        },
         else => {
             return sema.mod.fail(&block.base, fn_inst_src, "expected function, found '{}'", .{fn_inst_ty});
         },
@@ -4989,7 +4986,6 @@ fn analyzeSwitch(
         .Undefined,
         .Null,
         .Optional,
-        .BoundFn,
         .Opaque,
         .Vector,
         .Frame,

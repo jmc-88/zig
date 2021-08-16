@@ -199,7 +199,6 @@ pub const TypeInfo = union(enum) {
     Enum: Enum,
     Union: Union,
     Fn: Fn,
-    BoundFn: Fn,
     Opaque: Opaque,
     Frame: Frame,
     AnyFrame: AnyFrame,

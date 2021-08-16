@@ -585,8 +585,6 @@ pub const DeclGen = struct {
             .Type,
             => unreachable, // Must be const or comptime.
 
-            .BoundFn => unreachable, // this type will be deleted from the language.
-
             else => |tag| return self.fail("TODO: SPIR-V backend: implement type {}s", .{tag}),
         }
 

@@ -154,7 +154,6 @@ pub const Type = extern union {
             .Void,
             .ErrorSet,
             .Fn,
-            .BoundFn,
             .Opaque,
             .AnyFrame,
             .Enum,
@@ -589,7 +588,6 @@ pub const Type = extern union {
             },
             .Opaque,
             .Float,
-            .BoundFn,
             .Frame,
             => std.debug.panic("TODO implement Type equality comparison of {} and {}", .{ a, b }),
         }
@@ -656,7 +654,6 @@ pub const Type = extern union {
             .ErrorSet,
             .Enum,
             .Union,
-            .BoundFn,
             .Opaque,
             .Frame,
             .AnyFrame,
@@ -2271,7 +2268,7 @@ pub const Type = extern union {
             => return true,
 
             .Opaque => return is_extern,
-            .BoundFn,
+
             .ComptimeFloat,
             .ComptimeInt,
             .EnumLiteral,

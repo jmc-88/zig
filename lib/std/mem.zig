@@ -255,7 +255,6 @@ pub fn zeroes(comptime T: type) T {
         .ErrorUnion,
         .ErrorSet,
         .Fn,
-        .BoundFn,
         .Type,
         .NoReturn,
         .Undefined,

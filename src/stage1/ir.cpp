@@ -645,7 +645,6 @@ static bool types_have_same_zig_comptime_repr(CodeGen *codegen, ZigType *expecte
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdErrorSet:
         case ZigTypeIdOpaque:
         case ZigTypeIdAnyFrame:
@@ -5589,19 +5588,6 @@ static Stage1AirInst *ir_const_fn(IrAnalyze *ira, Scope *scope, AstNode *source_
     return result;
 }
 
-static Stage1AirInst *ir_const_bound_fn(IrAnalyze *ira, Scope *scope, AstNode *source_node,
-        ZigFn *fn_entry, Stage1AirInst *first_arg, AstNode *first_arg_src)
-{
-    // This is unfortunately required to avoid improperly freeing first_arg_src
-    ira_ref(ira);
-
-    Stage1AirInst *result = ir_const(ira, scope, source_node, get_bound_fn_type(ira->codegen, fn_entry));
-    result->value->data.x_bound_fn.fn = fn_entry;
-    result->value->data.x_bound_fn.first_arg = first_arg;
-    result->value->data.x_bound_fn.first_arg_src = first_arg_src;
-    return result;
-}
-
 static Stage1AirInst *ir_const_type(IrAnalyze *ira, Scope *scope, AstNode *source_node, ZigType *ty) {
     Stage1AirInst *result = ir_const(ira, scope, source_node, ira->codegen->builtin_types.entry_type);
     result->value->data.x_type = ty;
@@ -9225,7 +9211,6 @@ static bool type_is_self_comparable(ZigType *ty, bool is_equality_cmp) {
         case ZigTypeIdErrorSet:
         case ZigTypeIdFn:
         case ZigTypeIdOpaque:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdEnum:
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdAnyFrame:
@@ -11447,7 +11432,6 @@ static Stage1AirInst *ir_analyze_instruction_export(IrAnalyze *ira, Stage1ZirIns
                 case ZigTypeIdOptional:
                 case ZigTypeIdErrorUnion:
                 case ZigTypeIdErrorSet:
-                case ZigTypeIdBoundFn:
                 case ZigTypeIdOpaque:
                 case ZigTypeIdFnFrame:
                 case ZigTypeIdAnyFrame:
@@ -11472,7 +11456,6 @@ static Stage1AirInst *ir_analyze_instruction_export(IrAnalyze *ira, Stage1ZirIns
         case ZigTypeIdErrorSet:
         case ZigTypeIdVector:
             zig_panic("TODO export const value of type %s", buf_ptr(&target->value->type->name));
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOpaque:
         case ZigTypeIdEnumLiteral:
         case ZigTypeIdFnFrame:
@@ -11733,7 +11716,6 @@ static bool type_can_bit_cast(ZigType *t) {
             zig_unreachable();
         case ZigTypeIdMetaType:
         case ZigTypeIdOpaque:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdUnreachable:
         case ZigTypeIdComptimeFloat:
         case ZigTypeIdComptimeInt:
@@ -13487,16 +13469,7 @@ static Stage1AirInst *ir_analyze_call_extra(IrAnalyze *ira, Scope *scope, AstNod
     AstNode *first_arg_ptr_src = nullptr;
     ZigFn *fn = nullptr;
     if (instr_is_comptime(fn_ref)) {
-        if (fn_ref->value->type->id == ZigTypeIdBoundFn) {
-            assert(fn_ref->value->special == ConstValSpecialStatic);
-            fn = fn_ref->value->data.x_bound_fn.fn;
-            first_arg_ptr = fn_ref->value->data.x_bound_fn.first_arg;
-            first_arg_ptr_src = fn_ref->value->data.x_bound_fn.first_arg_src;
-            if (type_is_invalid(first_arg_ptr->value->type))
-                return ira->codegen->invalid_inst_gen;
-        } else {
-            fn = ir_resolve_fn(ira, fn_ref);
-        }
+        fn = ir_resolve_fn(ira, fn_ref);
     }
 
     // Some modifiers require the callee to be comptime-known
@@ -13556,16 +13529,7 @@ static Stage1AirInst *ir_analyze_async_call_extra(IrAnalyze *ira, Scope *scope, 
     AstNode *first_arg_ptr_src = nullptr;
     ZigFn *fn = nullptr;
     if (instr_is_comptime(fn_ref)) {
-        if (fn_ref->value->type->id == ZigTypeIdBoundFn) {
-            assert(fn_ref->value->special == ConstValSpecialStatic);
-            fn = fn_ref->value->data.x_bound_fn.fn;
-            first_arg_ptr = fn_ref->value->data.x_bound_fn.first_arg;
-            first_arg_ptr_src = fn_ref->value->data.x_bound_fn.first_arg_src;
-            if (type_is_invalid(first_arg_ptr->value->type))
-                return ira->codegen->invalid_inst_gen;
-        } else {
-            fn = ir_resolve_fn(ira, fn_ref);
-        }
+        fn = ir_resolve_fn(ira, fn_ref);
     }
 
     Stage1AirInst *ret_ptr_uncasted = nullptr;
@@ -13680,14 +13644,6 @@ static Stage1AirInst *ir_analyze_instruction_call(IrAnalyze *ira, Stage1ZirInstC
             CallModifier modifier = is_comptime ? CallModifierCompileTime : call_instruction->modifier;
             return ir_analyze_fn_call_src(ira, call_instruction, fn_table_entry, fn_type,
                 fn_ref, nullptr, nullptr, modifier);
-        } else if (fn_ref->value->type->id == ZigTypeIdBoundFn) {
-            assert(fn_ref->value->special == ConstValSpecialStatic);
-            ZigFn *fn_table_entry = fn_ref->value->data.x_bound_fn.fn;
-            Stage1AirInst *first_arg_ptr = fn_ref->value->data.x_bound_fn.first_arg;
-            AstNode *first_arg_ptr_src = fn_ref->value->data.x_bound_fn.first_arg_src;
-            CallModifier modifier = is_comptime ? CallModifierCompileTime : call_instruction->modifier;
-            return ir_analyze_fn_call_src(ira, call_instruction, fn_table_entry, fn_table_entry->type_entry,
-                fn_ref, first_arg_ptr, first_arg_ptr_src, modifier);
         } else {
             ir_add_error(ira, fn_ref,
                 buf_sprintf("type '%s' not a function", buf_ptr(&fn_ref->value->type->name)));
@@ -14974,9 +14930,8 @@ static Stage1AirInst *ir_analyze_container_member_access_inner(IrAnalyze *ira,
                 if (type_is_invalid(fn_entry->type_entry))
                     return ira->codegen->invalid_inst_gen;
 
-                Stage1AirInst *bound_fn_value = ir_const_bound_fn(ira, scope, source_node, fn_entry, container_ptr,
-                        container_ptr_src);
-                return ir_get_ref(ira, scope, source_node, bound_fn_value, true, false);
+                Stage1AirInst *fn_value = ir_const_fn(ira, scope, source_node, fn_entry);
+                return ir_get_ref(ira, scope, source_node, fn_value, true, false);
             } else if (tld->id == TldIdVar) {
                 resolve_top_level_decl(ira->codegen, tld, source_node, false);
                 if (tld->resolution == TldResolutionInvalid)
@@ -14994,9 +14949,8 @@ static Stage1AirInst *ir_analyze_container_member_access_inner(IrAnalyze *ira,
                 if (var->const_value->type->id == ZigTypeIdFn) {
                     src_assert(var->const_value->data.x_ptr.special == ConstPtrSpecialFunction, source_node);
                     ZigFn *fn = var->const_value->data.x_ptr.data.fn.fn_entry;
-                    Stage1AirInst *bound_fn_value = ir_const_bound_fn(ira, scope, source_node, fn, container_ptr,
-                            container_ptr_src);
-                    return ir_get_ref(ira, scope, source_node, bound_fn_value, true, false);
+                    Stage1AirInst *fn_value = ir_const_fn(ira, scope, source_node, fn);
+                    return ir_get_ref(ira, scope, source_node, fn_value, true, false);
                 }
             }
         }
@@ -16611,7 +16565,6 @@ static Stage1AirInst *ir_analyze_instruction_switch_target(IrAnalyze *ira,
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
         case ZigTypeIdOptional:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdOpaque:
         case ZigTypeIdVector:
         case ZigTypeIdFnFrame:
@@ -18556,15 +18509,6 @@ static Error ir_make_type_info_value(IrAnalyze *ira, Scope *scope, AstNode *sour
 
                 break;
             }
-        case ZigTypeIdBoundFn:
-            {
-                ZigType *fn_type = type_entry->data.bound_fn.fn_type;
-                assert(fn_type->id == ZigTypeIdFn);
-                if ((err = ir_make_type_info_value(ira, scope, source_node, fn_type, &result)))
-                    return err;
-
-                break;
-            }
         case ZigTypeIdOpaque:
             {
                 result = ira->codegen->pass1_arena->create<ZigValue>();
@@ -19292,8 +19236,7 @@ static ZigType *type_info_to_type(IrAnalyze *ira, Scope *scope, AstNode *source_
             }
             return entry;
         }
-        case ZigTypeIdFn:
-        case ZigTypeIdBoundFn: {
+        case ZigTypeIdFn: {
             assert(payload->special == ConstValSpecialStatic);
             assert(payload->type == ir_type_info_get_type(ira, "Fn", nullptr));
 
@@ -19382,12 +19325,6 @@ static ZigType *type_info_to_type(IrAnalyze *ira, Scope *scope, AstNode *source_
             switch (tagTypeId) {
                 case ZigTypeIdFn:
                     return entry;
-                case ZigTypeIdBoundFn: {
-                    ZigType *bound_fn_entry = new_type_table_entry(ZigTypeIdBoundFn);
-                    bound_fn_entry->name = *buf_sprintf("(bound %s)", buf_ptr(&entry->name));
-                    bound_fn_entry->data.bound_fn.fn_type = entry;
-                    return bound_fn_entry;
-                }
                 default:
                     zig_unreachable();
             }
@@ -22869,7 +22806,6 @@ static void buf_write_value_bytes(CodeGen *codegen, uint8_t *buf, ZigValue *val)
         case ZigTypeIdInvalid:
         case ZigTypeIdMetaType:
         case ZigTypeIdOpaque:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdUnreachable:
         case ZigTypeIdComptimeFloat:
         case ZigTypeIdComptimeInt:
@@ -23030,7 +22966,6 @@ static Error buf_read_value_bytes(IrAnalyze *ira, CodeGen *codegen, AstNode *sou
         case ZigTypeIdInvalid:
         case ZigTypeIdMetaType:
         case ZigTypeIdOpaque:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdUnreachable:
         case ZigTypeIdComptimeFloat:
         case ZigTypeIdComptimeInt:
@@ -23542,10 +23477,6 @@ static Stage1AirInst *ir_analyze_instruction_arg_type(IrAnalyze *ira, Stage1ZirI
     if (!ir_resolve_usize(ira, arg_index_inst, &arg_index))
         return ira->codegen->invalid_inst_gen;
 
-    if (fn_type->id == ZigTypeIdBoundFn) {
-        fn_type = fn_type->data.bound_fn.fn_type;
-        arg_index += 1;
-    }
     if (fn_type->id != ZigTypeIdFn) {
         ir_add_error(ira, fn_type_inst, buf_sprintf("expected function, found '%s'", buf_ptr(&fn_type->name)));
         return ira->codegen->invalid_inst_gen;
@@ -25578,7 +25509,6 @@ static Error ir_resolve_lazy_raw(AstNode *source_node, ZigValue *val) {
                     case ZigTypeIdEnumLiteral:
                     case ZigTypeIdUndefined:
                     case ZigTypeIdNull:
-                    case ZigTypeIdBoundFn:
                     case ZigTypeIdVoid:
                     case ZigTypeIdOpaque:
                         ir_add_error_node(ira, lazy_align_of->target_type->source_node,
@@ -25629,7 +25559,6 @@ static Error ir_resolve_lazy_raw(AstNode *source_node, ZigValue *val) {
                     case ZigTypeIdUnreachable:
                     case ZigTypeIdUndefined:
                     case ZigTypeIdNull:
-                    case ZigTypeIdBoundFn:
                     case ZigTypeIdOpaque:
                         ir_add_error_node(ira, lazy_size_of->target_type->source_node,
                             buf_sprintf("no size available for type '%s'",
@@ -25732,7 +25661,6 @@ static Error ir_resolve_lazy_raw(AstNode *source_node, ZigValue *val) {
                 case ZigTypeIdEnum:
                 case ZigTypeIdUnion:
                 case ZigTypeIdFn:
-                case ZigTypeIdBoundFn:
                 case ZigTypeIdVector:
                 case ZigTypeIdFnFrame:
                 case ZigTypeIdAnyFrame:
@@ -25913,7 +25841,6 @@ static Error ir_resolve_lazy_raw(AstNode *source_node, ZigValue *val) {
                 case ZigTypeIdEnum:
                 case ZigTypeIdUnion:
                 case ZigTypeIdFn:
-                case ZigTypeIdBoundFn:
                 case ZigTypeIdVector:
                 case ZigTypeIdFnFrame:
                 case ZigTypeIdAnyFrame:
@@ -26061,7 +25988,6 @@ static Error ir_resolve_lazy_recurse(AstNode *source_node, ZigValue *val) {
         case ZigTypeIdPointer:
         case ZigTypeIdFn:
         case ZigTypeIdAnyFrame:
-        case ZigTypeIdBoundFn:
         case ZigTypeIdInvalid:
         case ZigTypeIdUnreachable:
         case ZigTypeIdFloat:
