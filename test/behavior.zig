@@ -124,6 +124,7 @@ test {
             _ = @import("behavior/bugs/7027.zig");
             _ = @import("behavior/bugs/7047.zig");
             _ = @import("behavior/bugs/7250.zig");
+            _ = @import("behavior/bugs/7314.zig");
             _ = @import("behavior/bugs/9584.zig");
             _ = @import("behavior/bugs/9967.zig");
             _ = @import("behavior/byteswap.zig");
