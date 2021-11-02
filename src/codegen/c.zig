@@ -965,37 +965,40 @@ pub const DeclGen = struct {
 
         var buffer = std.ArrayList(u8).init(dg.typedefs.allocator);
         defer buffer.deinit();
+        const bw = buffer.writer();
 
-        try buffer.appendSlice("typedef struct {\n");
+        const name_start = buffer.items.len;
+        try bw.print("struct zig_S_{s}", .{fmtIdent(fqn)});
+        const struct_name = buffer.items[name_start..];
+
+        // Since the type may be defined recursively we insert a
+        // placeholder item in the typedefs map to prevent infinite
+        // recursion. This will be updated later with the real
+        // rendered contents of the type definition.
+        const type_tag = try t.copy(dg.typedefs_arena);
+        try dg.typedefs.ensureUnusedCapacity(1);
+        dg.typedefs.putAssumeCapacityNoClobber(
+            type_tag,
+            .{ .name = struct_name, .rendered = "" },
+        );
+        // Finally, update the rendered contents in the typedefs map
+        // with the resulting type definition.
+        defer dg.typedefs.getPtr(type_tag).?.rendered = buffer.toOwnedSlice();
+
+        try buffer.appendSlice(" {\n");
         {
             var it = struct_obj.fields.iterator();
             while (it.next()) |entry| {
                 const field_ty = entry.value_ptr.ty;
-                if (!field_ty.hasRuntimeBits()) continue;
-
-                const alignment = entry.value_ptr.abi_align;
-                const name: CValue = .{ .identifier = entry.key_ptr.* };
+                const field_name: CValue = .{ .bytes = entry.key_ptr.* };
                 try buffer.append(' ');
-                try dg.renderTypeAndName(buffer.writer(), field_ty, name, .Mut, alignment);
+                try dg.renderTypeAndName(bw, field_ty, field_name, .Mut, 0);
                 try buffer.appendSlice(";\n");
             }
         }
-        try buffer.appendSlice("} ");
+        try buffer.appendSlice("};\n");
 
-        const name_start = buffer.items.len;
-        try buffer.writer().print("zig_S_{};\n", .{fmtIdent(fqn)});
-
-        const rendered = buffer.toOwnedSlice();
-        errdefer dg.typedefs.allocator.free(rendered);
-        const name = rendered[name_start .. rendered.len - 2];
-
-        try dg.typedefs.ensureUnusedCapacity(1);
-        dg.typedefs.putAssumeCapacityNoClobber(
-            try t.copy(dg.typedefs_arena),
-            .{ .name = name, .rendered = rendered },
-        );
-
-        return name;
+        return struct_name;
     }
 
     fn renderTupleTypedef(dg: *DeclGen, t: Type) error{ OutOfMemory, AnalysisFail }![]const u8 {
