@@ -156,19 +156,20 @@ test {
     _ = @import("behavior/while.zig");
     _ = @import("behavior/widening.zig");
 
+    if (builtin.os.tag != .wasi) {
+        if (builtin.zig_backend != .stage2_arm and
+            builtin.zig_backend != .stage2_aarch64)
+        {
+            _ = @import("behavior/asm.zig");
+        }
+    }
+
     if (builtin.stage2_arch == .wasm32) {
         _ = @import("behavior/wasm.zig");
     }
 
     if (builtin.zig_backend != .stage1) {
         _ = @import("behavior/decltest.zig");
-    }
-
-    if (builtin.os.tag != .wasi) {
-        if (builtin.zig_backend == .stage1) {
-            // TODO get these tests passing with stage2
-            _ = @import("behavior/asm.zig");
-        }
     }
 
     if (builtin.zig_backend != .stage2_arm and
@@ -182,3 +183,4 @@ test {
         _ = @import("behavior/export_self_referential_type_info.zig");
     }
 }
+
