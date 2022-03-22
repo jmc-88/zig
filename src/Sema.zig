@@ -10002,24 +10002,26 @@ fn zirAsm(
     var output_type_bits = extra.data.output_type_bits;
     var needed_capacity: usize = @typeInfo(Air.Asm).Struct.fields.len + outputs_len + inputs_len;
 
-    const Output = struct { constraint: []const u8, ty: Type };
+    const Output = struct { constraint: []const u8, is_type: bool, ty: Type };
     const output: ?Output = if (outputs_len == 0) null else blk: {
         const output = sema.code.extraData(Zir.Inst.Asm.Output, extra_i);
         extra_i = output.end;
 
-        const is_type = @truncate(u1, output_type_bits) != 0;
-        output_type_bits >>= 1;
-
-        if (!is_type) {
-            return sema.fail(block, src, "TODO implement Sema for asm with non `->` output", .{});
-        }
-
         const constraint = sema.code.nullTerminatedString(output.data.constraint);
         needed_capacity += constraint.len / 4 + 1;
 
+        const is_type = @truncate(u1, output_type_bits) != 0;
+        output_type_bits >>= 1;
+
+        const output_ty = if (is_type)
+            try sema.resolveType(block, ret_ty_src, output.data.operand)
+        else
+            sema.typeOf(sema.resolveInst(output.data.operand));
+
         break :blk Output{
             .constraint = constraint,
-            .ty = try sema.resolveType(block, ret_ty_src, output.data.operand),
+            .is_type = is_type,
+            .ty = output_ty,
         };
     };
 
@@ -10059,10 +10061,18 @@ fn zirAsm(
 
     const gpa = sema.gpa;
     try sema.air_extra.ensureUnusedCapacity(gpa, needed_capacity);
+    const return_ty = blk: {
+        if (output) |o| {
+            if (o.is_type) {
+                break :blk try sema.addType(o.ty);
+            }
+        }
+        break :blk Air.Inst.Ref.void_type;
+    };
     const asm_air = try block.addInst(.{
         .tag = .assembly,
         .data = .{ .ty_pl = .{
-            .ty = if (output) |o| try sema.addType(o.ty) else Air.Inst.Ref.void_type,
+            .ty = return_ty,
             .payload = sema.addExtraAssumeCapacity(Air.Asm{
                 .source_len = @intCast(u32, asm_source.len),
                 .outputs_len = outputs_len,
