@@ -2074,7 +2074,7 @@ fn airLoad(f: *Function, inst: Air.Inst.Index) !CValue {
     const writer = f.object.writer();
 
     // We need to separately initialize arrays with a memcpy so they must be mutable.
-    const local = try f.allocLocal(inst_ty, if (is_array) .Mut else .Const);
+    const local = try f.allocLocal(inst_ty, .Mut); // if (is_array) .Mut else .Const);
 
     if (is_array) {
         // Insert a memcpy to initialize this array. The source operand is always a pointer
@@ -2995,17 +2995,13 @@ fn airAsm(f: *Function, inst: Air.Inst.Index) !CValue {
         return f.fail("TODO implement codegen for asm with more than 1 output", .{});
     }
 
-    const output_constraint: ?[]const u8 = for (outputs) |output| {
-        if (output != .none) {
-            return f.fail("TODO implement codegen for non-expr asm", .{});
-        }
+    const outputs_extra_begin = extra_i;
+    for (outputs) |_| {
         const constraint = std.mem.sliceTo(std.mem.sliceAsBytes(f.air.extra[extra_i..]), 0);
         // This equation accounts for the fact that even if we have exactly 4 bytes
         // for the string, we still use the next u32 for the null terminator.
         extra_i += constraint.len / 4 + 1;
-
-        break constraint;
-    } else null;
+    }
 
     const writer = f.object.writer();
     try writer.writeAll("{\n");
@@ -3023,14 +3019,16 @@ fn airAsm(f: *Function, inst: Air.Inst.Index) !CValue {
             try writer.writeAll("register ");
             try f.renderType(writer, f.air.typeOf(input));
 
-            try writer.print(" {s}_constant __asm__(\"{s}\") = ", .{ reg, reg });
+            try writer.print(" const {s}_constant __asm__(\"{s}\") = ", .{ reg, reg });
             try f.writeCValue(writer, arg_c_value);
             try writer.writeAll(";\n");
         } else {
             try writer.writeAll("register ");
-            try f.renderType(writer, f.air.typeOf(input));
-            try writer.print(" input_{d} = ", .{i});
-            try f.writeCValue(writer, try f.resolveInst(input));
+            const input_ty = f.air.typeOf(input);
+            try f.renderType(writer, input_ty);
+            try writer.print(" const zig_asm_input_{d} = ", .{i});
+            const input_inst = try f.resolveInst(input);
+            try f.writeCValue(writer, input_inst);
             try writer.writeAll(";\n");
         }
     }
@@ -3051,11 +3049,21 @@ fn airAsm(f: *Function, inst: Air.Inst.Index) !CValue {
 
     const volatile_string: []const u8 = if (is_volatile) "volatile " else "";
     try writer.print("__asm {s}(\"{s}\"", .{ volatile_string, asm_source });
-    if (output_constraint) |_| {
-        return f.fail("TODO: CBE inline asm output", .{});
+    if (outputs.len > 0) {
+        extra_i = outputs_extra_begin;
+        for (outputs) |output| {
+            const constraint = std.mem.sliceTo(std.mem.sliceAsBytes(f.air.extra[extra_i..]), 0);
+            // This equation accounts for the fact that even if we have exactly 4 bytes
+            // for the string, we still use the next u32 for the null terminator.
+            extra_i += constraint.len / 4 + 1;
+
+            try writer.print(" : \"{s}\" (", .{constraint});
+            try f.writeCValue(writer, try f.resolveInst(output));
+            try writer.writeAll(") ");
+        }
     }
     if (inputs.len > 0) {
-        if (output_constraint == null) {
+        if (outputs.len == 0) {
             try writer.writeAll(" :");
         }
         try writer.writeAll(": ");
@@ -3066,17 +3074,15 @@ fn airAsm(f: *Function, inst: Air.Inst.Index) !CValue {
             // for the string, we still use the next u32 for the null terminator.
             extra_i += constraint.len / 4 + 1;
 
+            if (index > 0) {
+                try writer.writeAll(", ");
+            }
+
             if (constraint[0] == '{' and constraint[constraint.len - 1] == '}') {
                 const reg = constraint[1 .. constraint.len - 1];
-                if (index > 0) {
-                    try writer.writeAll(", ");
-                }
-                try writer.print("\"r\"({s}_constant)", .{reg});
+                try writer.print("\"r\" ({s}_constant)", .{reg});
             } else {
-                if (index > 0) {
-                    try writer.writeAll(", ");
-                }
-                try writer.print("\"r\"(input_{d})", .{index});
+                try writer.print("\"{s}\" (zig_asm_input_{d})", .{constraint, index});
             }
         }
     }
