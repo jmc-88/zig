@@ -10000,7 +10000,7 @@ fn zirAsm(
 
     var extra_i = extra.end;
     var output_type_bits = extra.data.output_type_bits;
-    var needed_capacity: usize = @typeInfo(Air.Asm).Struct.fields.len + outputs_len + inputs_len;
+    var needed_capacity: usize = @typeInfo(Air.Asm).Struct.fields.len + outputs_len + inputs_len + clobbers_len;
 
     const Output = struct { constraint: []const u8, is_type: bool, ty: Type };
     const output: ?Output = if (outputs_len == 0) null else blk: {
