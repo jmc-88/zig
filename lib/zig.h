@@ -52,7 +52,7 @@
 
 #if __STDC_VERSION__ >= 201112L
 #define zig_align(alignment) _Alignas(alignment)
-#elif zig_has_attribute(aligned)
+#elif zig_has_attribute(aligned) || defined(__TINYC__)
 #define zig_align(alignment) __attribute__((aligned(alignment)))
 #elif _MSC_VER
 #else
