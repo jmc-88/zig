@@ -1319,8 +1319,9 @@ pub const DeclGen = struct {
 
         try bw.writeAll(";\n} ");
         const name_begin = buffer.items.len;
+        const slice_type_prefix: u8 = if (t.isConstPtr()) 'L' else 'M';
         try bw.print("zig_{c}_{}", .{
-            @as(u8, if (t.isConstPtr()) 'L' else 'M'),
+            slice_type_prefix,
             typeToCIdentifier(t.childType(), dg.module),
         });
         const name_end = buffer.items.len;
